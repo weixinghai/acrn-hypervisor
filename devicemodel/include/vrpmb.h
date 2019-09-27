@@ -30,6 +30,4 @@
 
 #define RPMB_KEY_LEN 64
 
-int get_vrpmb_key(uint8_t *out, size_t size);
-
 #endif /* _VRPMB_ */

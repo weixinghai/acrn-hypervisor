@@ -743,13 +743,6 @@ virtio_rpmb_init(struct vmctx *ctx, struct pci_vdev *dev, char *opts)
 	}
 
 	virtio_set_io_bar(&rpmb->base, 0);
-
-	rc = get_virt_rpmb_key();
-	if (rc == 0) {
-		DPRINTF(("%s: get uos key failed!\n", __func__));
-		goto out;
-	}
-
 	memset(key, 0, RPMB_KEY_32_LEN);
 
 	if (opts && !strncmp(opts, PHYSICAL_RPMB_STR, sizeof(PHYSICAL_RPMB_STR))) {

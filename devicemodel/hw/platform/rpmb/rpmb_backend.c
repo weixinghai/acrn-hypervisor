@@ -51,6 +51,7 @@ static uint8_t virt_rpmb_key[RPMB_KEY_32_LEN] = {0};
 static uint16_t g_rpmb_mode = RPMB_SIM_MODE;
 static const char READ_DATA_STR[READ_STR_LEN] = "read data";
 static const char WRITE_DATA_STR[WRITE_STR_LEN] = "write data";
+static bool virtio_rpmb_key_programed = false;
 
 //TODO: will be read from config file.
 static uint16_t get_uos_count(void)
@@ -103,17 +104,9 @@ void rpmb_counter_init(uint32_t counter)
 	phy_counter = counter;
 }
 
-static bool is_key_programmed(void)
+static bool is_vkey_programmed(void)
 {
-	if (g_rpmb_mode == RPMB_PHY_MODE) {
-		return true;
-	} else if (g_rpmb_mode == RPMB_SIM_MODE) {
-		if (is_use_sim_rpmb())
-			return true;
-	}
-
-	DPRINTF(("%s: rpmb mode 0x%x is unsupported\n", __func__, g_rpmb_mode));
-	return false;
+	return virtio_rpmb_key_programed;
 }
 
 static uint16_t get_phy_addr(uint8_t uos_id, uint16_t vaddr)
@@ -126,21 +119,6 @@ static uint16_t get_phy_addr(uint8_t uos_id, uint16_t vaddr)
 	} else {
 		return (((accessible_blocks - common_blocks) * uos_id) + vaddr);
 	}
-}
-
-int get_virt_rpmb_key(void)
-{
-	int rc = -1;
-	uint8_t key[RPMB_KEY_LEN];
-
-	rc = get_vrpmb_key(key, sizeof(key));
-	if (rc == 0){
-		DPRINTF(("%s: get uos key fail\n", __func__));
-	}
-
-	memcpy(virt_rpmb_key, key, RPMB_KEY_32_LEN);
-	memset(key, 0, RPMB_KEY_LEN);
-	return rc;
 }
 
 static int rpmb_replace_frame(struct rpmb_frame *frames, uint32_t frame_cnt,
@@ -316,6 +294,12 @@ static int rpmb_virt_write(uint32_t ioc_cmd, void* seq_data,
 		return -1;
 	}
 
+	if (!is_vkey_programmed()) {
+		DPRINTF(("%s: rpmb key is not programmed\n", __func__));
+		err = RPMB_RES_NO_AUTH_KEY;
+		goto out;
+	}
+
 	uos_id = get_uos_id();
 
 	vaddr = swap16(in_frame->addr);
@@ -370,9 +354,13 @@ static int rpmb_virt_write(uint32_t ioc_cmd, void* seq_data,
 
 	return 0;
 out:
-	rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key, in_frame[0].nonce,
-			&virt_counter, &vaddr, &block_count, &err, &resp);
-
+	if (err == RPMB_RES_NO_AUTH_KEY) {
+		rpmb_replace_frame(out_frame, out_cnt, NULL, NULL,
+				NULL, NULL, NULL, &err, &resp);
+	} else {
+		rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key, NULL,
+				&virt_counter, &vaddr, &block_count, &err, &resp);
+	}
 	return 0;
 }
 
@@ -395,6 +383,12 @@ static int rpmb_virt_read(uint32_t ioc_cmd, void* seq_data,
 	if (out_cnt == 0 || out_frame == NULL) {
 		DPRINTF(("%s: out_frame or out_cnt is not available\n", __func__));
 		return -1;
+	}
+
+	if (!is_vkey_programmed()) {
+		DPRINTF(("%s: rpmb key is not programmed\n", __func__));
+		err = RPMB_RES_NO_AUTH_KEY;
+		goto out;
 	}
 
 	uos_id = get_uos_id();
@@ -421,11 +415,49 @@ static int rpmb_virt_read(uint32_t ioc_cmd, void* seq_data,
 
 	rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key, NULL,
 				NULL, &vaddr, NULL, NULL, NULL);
-
 	return 0;
 out:
-	rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key, in_frame[0].nonce,
-					NULL, &vaddr, &block_count, &err, &resp);
+	if (err == RPMB_RES_NO_AUTH_KEY) {
+		rpmb_replace_frame(out_frame, out_cnt, NULL, NULL,
+				NULL, NULL, NULL, &err, &resp);
+	} else {
+		rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key, in_frame[0].nonce,
+						NULL, &vaddr, &block_count, &err, &resp);
+	}
+
+	return 0;
+}
+
+static int rpmb_virt_program_key(uint32_t ioc_cmd, void* seq_data, struct rpmb_frame* in_frame,
+								 uint32_t in_cnt, struct rpmb_frame* out_frame, uint32_t out_cnt)
+{
+	int err = RPMB_RES_OK;
+	int resp = RPMB_RESP_PROGRAM_KEY;
+
+	if (in_cnt == 0 || in_frame == NULL) {
+		DPRINTF(("%s: in_frame or in_cnt is not available\n", __func__));
+		return -1;
+	}
+
+	if (out_cnt == 0 || out_frame == NULL) {
+		DPRINTF(("%s: out_frame or out_cnt is not available\n", __func__));
+		return -1;
+	}
+
+	memset(out_frame, 0, out_cnt * RPMB_FRAME_SIZE);
+
+	if (is_vkey_programmed()) {
+		err = RPMB_RES_GENERAL_FAILURE;
+		DPRINTF(("%s: rpmb key has already programmed\n", __func__));
+		goto out;
+	}
+
+	virtio_rpmb_key_programed = true;
+	memcpy(virt_rpmb_key, in_frame->key_mac, RPMB_KEY_32_LEN);
+
+out:
+	rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key,
+			NULL, NULL, NULL, NULL, &err, &resp);
 
 	return 0;
 }
@@ -448,7 +480,7 @@ static int rpmb_virt_get_counter(struct rpmb_frame* in_frame, uint32_t in_cnt,
 
 	memset(out_frame, 0, out_cnt * RPMB_FRAME_SIZE);
 
-	if (!is_key_programmed()) {
+	if (!is_vkey_programmed()) {
 		DPRINTF(("%s: rpmb key is not programmed\n", __func__));
 		err = RPMB_RES_NO_AUTH_KEY;
 		goto out;
@@ -460,8 +492,13 @@ static int rpmb_virt_get_counter(struct rpmb_frame* in_frame, uint32_t in_cnt,
 	return 0;
 
 out:
-	rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key,
-			in_frame[0].nonce, NULL, NULL, NULL, &err, &resp);
+	if (err == RPMB_RES_NO_AUTH_KEY) {
+		rpmb_replace_frame(out_frame, out_cnt, NULL, NULL,
+				NULL, NULL, NULL, &err, &resp);
+	} else {
+		rpmb_replace_frame(out_frame, out_cnt, virt_rpmb_key,
+				in_frame[0].nonce, NULL, NULL, NULL, &err, &resp);
+	}
 
 	return 0;
 }
@@ -509,8 +546,8 @@ int rpmb_handler(uint32_t cmd, void *r)
 			else
 				rc = rpmb_virt_write(cmd, r, frame_rel_write, rel_write_cnt, NULL, 0);
 		} else if (frame_rel_write[0].req_resp == swap16(RPMB_REQ_PROGRAM_KEY)) {
-			DPRINTF(("%s: rpmb grogram key is unsupported\n", __func__));
-			goto err_response;
+			rc = rpmb_virt_program_key(cmd, r, frame_rel_write, 1, frame_read, 1);
+			DPRINTF(("%s: rpmb_virt_program_key\n", __func__));
 		} else {
 			DPRINTF(("%s: rpmb ioctl frame is invalid\n", __func__));
 			goto err_response;

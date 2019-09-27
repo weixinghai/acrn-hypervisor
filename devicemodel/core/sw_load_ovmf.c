@@ -70,8 +70,6 @@ static char ovmf_path[STR_LEN];
 static size_t ovmf_size;
 bool writeback_nv_storage;
 
-extern int init_cmos_vrpmb(struct vmctx *ctx);
-
 size_t
 ovmf_image_size(void)
 {
@@ -158,8 +156,6 @@ acrn_sw_load_ovmf(struct vmctx *ctx)
 		uint32_t nentries;
 		struct e820_entry map[];
 	} __attribute__((packed)) *e820;
-
-	init_cmos_vrpmb(ctx);
 
 	ret = acrn_prepare_ovmf(ctx);
 

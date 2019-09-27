@@ -111,8 +111,6 @@ static size_t vsbl_size;
 
 static int boot_blk_bdf;
 
-extern int init_cmos_vrpmb(struct vmctx *ctx);
-
 #define	LOW_8BIT(x)	((x) & 0xFF)
 void
 vsbl_set_bdf(int bnum, int snum, int fnum)
@@ -250,8 +248,6 @@ acrn_sw_load_vsbl(struct vmctx *ctx)
 	int ret;
 	struct e820_entry *e820;
 	struct vsbl_para *vsbl_para;
-
-	init_cmos_vrpmb(ctx);
 
 	vsbl_para = (struct vsbl_para *)
 		(ctx->baseaddr + CONFIGPAGE_OFF(ctx));

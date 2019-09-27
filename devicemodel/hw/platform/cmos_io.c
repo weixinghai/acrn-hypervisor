@@ -106,15 +106,3 @@ cmos_io_handler(struct vmctx *ctx, int vcpu, int in, int port, int bytes,
 
 INOUT_PORT(cmos_io, CMOS_ADDR, IOPORT_F_INOUT, cmos_io_handler);
 INOUT_PORT(cmos_io, CMOS_DATA, IOPORT_F_INOUT, cmos_io_handler);
-
-int init_cmos_vrpmb(struct vmctx *ctx)
-{
-	uint8_t *vrpmb_buffer = &cmos_buffer[CMOS_VRPMB_START];
-
-	/* get vrpmb key, and store it to cmos buffer */
-	if (!get_vrpmb_key(vrpmb_buffer, RPMB_KEY_LEN)) {
-		printf("SW_LOAD: failed to get vrpmb key\n");
-		return -1;
-	}
-	return 0;
-}

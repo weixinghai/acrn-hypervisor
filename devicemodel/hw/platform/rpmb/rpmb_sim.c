@@ -553,23 +553,6 @@ out:
 	return ret;
 }
 
-int is_use_sim_rpmb(void)
-{
-	int ret;
-
-	ret = rpmb_sim_open(RPMB_SIM_PATH_NAME);
-	if (ret) {
-		DPRINTF(("%s: rpmb_sim_open failed\n", __func__));
-		return 0;
-	}
-
-	ret = is_key_programmed();
-
-	rpmb_sim_close();
-
-	return ret;
-}
-
 int rpmb_sim_key_init(uint8_t *key)
 {
 	int ret;
